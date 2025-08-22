@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat-Style Notebook</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Sarabun', 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #2d3748; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #718096; }
+        mark { background-color: #f6e05e; color: #2d3748; padding: 0 2px; border-radius: 2px; }
+        #sidebar { transition: transform 0.3s ease-in-out; }
+        #sidebar.closed { transform: translateX(-100%); }
+        #main-content { transition: margin-left 0.3s ease-in-out; }
+        .message-content { white-space: pre-wrap; word-break: break-word; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen antialiased">
+
+    <!-- Sidebar Overlay for mobile -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-30 hidden"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="w-4/5 sm:w-1/3 md:w-1/4 lg:w-1/5 bg-gray-800 p-4 flex flex-col fixed top-0 left-0 h-full z-40">
+        <h1 class="text-xl font-bold mb-4">สมุดบันทึก</h1>
+        <button id="new-chat-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 mb-4">
+            + สร้างแชทใหม่
+        </button>
+        <div id="chat-list" class="flex-grow overflow-y-auto custom-scrollbar"></div>
+    </aside>
+
+    <!-- Main Content -->
+    <main id="main-content" class="h-full flex flex-col bg-gray-900">
+        <!-- Header -->
+        <header class="bg-gray-800/50 backdrop-blur-sm p-4 flex flex-col sm:flex-row justify-between items-center border-b border-gray-700 gap-3">
+            <div class="flex items-center group w-full">
+                <button id="sidebar-toggle-btn" class="p-2 rounded-full hover:bg-gray-700 mr-3 text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/></svg>
+                </button>
+                <div class="flex items-center group flex-grow truncate">
+                    <h2 id="chat-title" class="text-lg font-semibold truncate">เลือกแชทเพื่อเริ่มต้น</h2>
+                    <button id="edit-title-btn" class="ml-2 p-1 rounded-full hover:bg-gray-700 opacity-0 group-hover:opacity-100 transition-opacity hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2 w-full sm:w-auto">
+                 <div class="relative flex-grow">
+                    <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <svg class="w-4 h-4 text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/></svg>
+                    </div>
+                    <input type="text" id="search-input" placeholder="ค้นหาในแชทนี้..." class="bg-gray-700 text-white placeholder-gray-400 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5 pl-10 hidden">
+                </div>
+                <button id="copy-all-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-3 rounded-lg transition duration-300 flex items-center" title="คัดลอกทั้งหมด">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M10.854 7.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 1 1 .708-.708L7.5 9.793l2.646-2.647a.5.5 0 0 1 .708 0"/><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M5.5 1.5A.5.5 0 0 1 6 1h4a.5.5 0 0 1 .5.5v1A.5.5 0 0 1 10 3H6a.5.5 0 0 1-.5-.5z"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Messages Area -->
+        <div id="messages-container" class="flex-grow p-4 overflow-y-auto custom-scrollbar">
+            <div id="welcome-screen" class="flex flex-col items-center justify-center h-full text-gray-500">
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" fill="currentColor" viewBox="0 0 16 16"><path d="M5 10.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"/><path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2"/><path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1z"/></svg>
+                <p class="text-center">สร้างแชทใหม่หรือเลือกแชทที่มีอยู่<br>เพื่อเริ่มจดบันทึก</p>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div id="input-area" class="p-4 bg-gray-800/50 border-t border-gray-700 hidden">
+            <div class="flex items-center bg-gray-700 rounded-lg p-2">
+                <textarea id="message-input" class="w-full bg-transparent text-white placeholder-gray-400 focus:outline-none resize-none" rows="1" placeholder="พิมพ์ข้อความบันทึกของคุณ..."></textarea>
+                <button id="send-btn" class="ml-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                    ส่ง
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-modal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-11/12 max-w-sm">
+            <h3 class="text-lg font-bold mb-4">ยืนยันการลบ</h3>
+            <p id="delete-modal-text" class="text-gray-300 mb-6"></p>
+            <div class="flex justify-end space-x-4">
+                <button id="cancel-delete-btn" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition-colors">ยกเลิก</button>
+                <button id="confirm-delete-btn" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-white transition-colors">ยืนยัน</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // DOM Elements
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+        const mainContent = document.getElementById('main-content');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        const chatList = document.getElementById('chat-list');
+        const chatTitle = document.getElementById('chat-title');
+        const editTitleBtn = document.getElementById('edit-title-btn');
+        const messagesContainer = document.getElementById('messages-container');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const copyAllBtn = document.getElementById('copy-all-btn');
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const inputArea = document.getElementById('input-area');
+        const searchInput = document.getElementById('search-input');
+        const deleteModal = document.getElementById('delete-modal');
+        const deleteModalText = document.getElementById('delete-modal-text');
+        const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+        const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+
+        // App State
+        let chats = [];
+        let activeChatId = null;
+
+        // --- Data Persistence ---
+        const saveChatsToLocalStorage = () => localStorage.setItem('chatNotebookData', JSON.stringify(chats));
+        const loadChatsFromLocalStorage = () => {
+            const data = localStorage.getItem('chatNotebookData');
+            if (data) {
+                chats = JSON.parse(data);
+                // Data migration for old messages without a 'sender' property
+                chats.forEach(chat => {
+                    chat.messages.forEach((msg, index) => {
+                        if (!msg.sender) {
+                            msg.sender = (index % 2 === 0) ? 'other' : 'user';
+                        }
+                    });
+                });
+            }
+        };
+
+        // --- Layout Management ---
+        const updateLayout = () => {
+            const sidebarIsOpen = !sidebar.classList.contains('closed');
+            const isMobile = window.innerWidth < 640;
+            if (isMobile) {
+                mainContent.style.marginLeft = '0px';
+                sidebarOverlay.classList.toggle('hidden', !sidebarIsOpen);
+            } else {
+                sidebarOverlay.classList.add('hidden');
+                mainContent.style.marginLeft = sidebarIsOpen ? `${sidebar.offsetWidth}px` : '0px';
+            }
+        };
+        const toggleSidebar = () => {
+            sidebar.classList.toggle('closed');
+            updateLayout();
+        };
+
+        // --- Core Rendering ---
+        const renderChatList = () => {
+            chatList.innerHTML = '';
+            if (chats.length === 0) {
+                chatList.innerHTML = '<p class="text-gray-500 text-center px-2">ยังไม่มีแชท</p>';
+                return;
+            }
+            [...chats].sort((a, b) => b.lastModified - a.lastModified).forEach(chat => {
+                const isActive = chat.id === activeChatId;
+                const chatElement = document.createElement('div');
+                chatElement.className = `p-3 my-1 rounded-lg cursor-pointer transition duration-200 flex justify-between items-center ${isActive ? 'bg-indigo-600 text-white' : 'hover:bg-gray-700'}`;
+                chatElement.dataset.chatId = chat.id;
+                chatElement.innerHTML = `
+                    <span class="truncate">${chat.title}</span>
+                    <button class="delete-chat-btn text-xs ml-2 p-1 rounded-full flex-shrink-0 ${isActive ? 'hover:bg-indigo-500' : 'hover:bg-gray-600'}" title="ลบแชทนี้">&#x2715;</button>
+                `;
+                chatElement.querySelector('.delete-chat-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showDeleteConfirmation('chat', chat.id);
+                });
+                chatElement.addEventListener('click', () => {
+                    switchChat(chat.id);
+                    if (window.innerWidth < 640) toggleSidebar();
+                });
+                chatList.appendChild(chatElement);
+            });
+        };
+
+        const renderMessages = (searchTerm = '') => {
+            messagesContainer.innerHTML = '';
+            messagesContainer.appendChild(welcomeScreen);
+
+            if (!activeChatId) {
+                welcomeScreen.style.display = 'flex';
+                inputArea.classList.add('hidden');
+                editTitleBtn.classList.add('hidden');
+                searchInput.classList.add('hidden');
+                chatTitle.textContent = 'เลือกแชทเพื่อเริ่มต้น';
+                return;
+            }
+
+            welcomeScreen.style.display = 'none';
+            inputArea.classList.remove('hidden');
+            editTitleBtn.classList.remove('hidden');
+            searchInput.classList.remove('hidden');
+
+            const activeChat = chats.find(c => c.id === activeChatId);
+            if (!activeChat) return;
+
+            chatTitle.textContent = activeChat.title;
+            const messagesToRender = searchTerm ? activeChat.messages.filter(msg => msg.text.toLowerCase().includes(searchTerm.toLowerCase())) : activeChat.messages;
+
+            if (messagesToRender.length === 0 && activeChat.messages.length > 0) {
+                messagesContainer.innerHTML += `<p class="text-center text-gray-500">ไม่พบข้อความที่ตรงกับ "${searchTerm}"</p>`;
+            }
+
+            messagesToRender.forEach(msg => {
+                const isUser = msg.sender === 'user';
+                const messageRow = document.createElement('div');
+                messageRow.className = `w-full flex ${isUser ? 'justify-end' : 'justify-start'}`;
+
+                const messageWrapper = document.createElement('div');
+                messageWrapper.className = 'group relative mb-2 max-w-4/5';
+                messageWrapper.dataset.messageId = msg.id;
+
+                let formattedText = msg.text;
+                if (searchTerm) {
+                    const regex = new RegExp(searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
+                    formattedText = formattedText.replace(regex, match => `<mark>${match}</mark>`);
+                }
+                
+                const bubbleColor = isUser ? 'bg-indigo-600' : 'bg-gray-700';
+
+                messageWrapper.innerHTML = `
+                    <div class="mb-1">
+                        <div class="${bubbleColor} rounded-lg p-3 inline-block max-w-full">
+                            <div class="message-content">${formattedText}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center h-5 ${isUser ? 'justify-end' : ''}">
+                        <div class="absolute bottom-0 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${isUser ? 'right-0' : 'left-0'}">
+                            <button class="copy-msg-btn p-1 hover:text-white text-gray-400 rounded" title="คัดลอก">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M5.5 1.5A.5.5 0 0 1 6 1h4a.5.5 0 0 1 .5.5v1A.5.5 0 0 1 10 3H6a.5.5 0 0 1-.5-.5z"/></svg>
+                            </button>
+                            <button class="edit-msg-btn p-1 hover:text-white text-gray-400 rounded" title="แก้ไข">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/></svg>
+                            </button>
+                            <button class="delete-msg-btn p-1 hover:text-red-500 text-gray-400 rounded" title="ลบ">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                messageRow.appendChild(messageWrapper);
+                messagesContainer.appendChild(messageRow);
+            });
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        };
+
+        const renderApp = () => {
+            renderChatList();
+            renderMessages(searchInput.value);
+        };
+
+        // --- Chat & Message Actions ---
+        const createNewChat = () => {
+            let maxNum = 0;
+            chats.forEach(chat => {
+                const match = chat.title.match(/^บันทึกที่ (\d+)$/);
+                if (match && parseInt(match[1]) > maxNum) maxNum = parseInt(match[1]);
+            });
+            const newChat = { id: Date.now(), title: `บันทึกที่ ${maxNum + 1}`, messages: [], lastModified: Date.now() };
+            chats.push(newChat);
+            switchChat(newChat.id);
+        };
+        const switchChat = (chatId) => {
+            activeChatId = chatId;
+            searchInput.value = '';
+            renderApp();
+        };
+        const addMessage = (text) => {
+            if (!text.trim() || !activeChatId) return;
+            const activeChat = chats.find(c => c.id === activeChatId);
+            if (activeChat) {
+                const lastMessage = activeChat.messages[activeChat.messages.length - 1];
+                const newSender = lastMessage?.sender === 'user' ? 'other' : 'user';
+                activeChat.messages.push({ id: Date.now(), text: text, timestamp: Date.now(), sender: newSender });
+                activeChat.lastModified = Date.now();
+                messageInput.value = '';
+                autoResizeTextarea();
+                renderApp();
+                saveChatsToLocalStorage();
+            }
+        };
+        const updateMessage = (messageId, newText) => {
+            const activeChat = chats.find(c => c.id === activeChatId);
+            const message = activeChat?.messages.find(m => m.id === messageId);
+            if (message) {
+                message.text = newText;
+                activeChat.lastModified = Date.now();
+                saveChatsToLocalStorage();
+                renderApp();
+            }
+        };
+        const renameChatTitle = () => {
+            if (!activeChatId) return;
+            const activeChat = chats.find(c => c.id === activeChatId);
+            const titleElement = document.getElementById('chat-title');
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = activeChat.title;
+            input.className = 'bg-gray-600 text-lg font-semibold rounded px-2 py-0 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+            titleElement.replaceWith(input);
+            input.focus();
+            input.select();
+            const saveTitle = () => {
+                const newTitle = input.value.trim();
+                if (newTitle && newTitle !== activeChat.title) {
+                    activeChat.title = newTitle;
+                    activeChat.lastModified = Date.now();
+                    saveChatsToLocalStorage();
+                }
+                input.replaceWith(titleElement);
+                renderApp();
+            };
+            input.addEventListener('blur', saveTitle);
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') input.blur();
+                else if (e.key === 'Escape') { input.value = activeChat.title; input.blur(); }
+            });
+        };
+        const copyAllText = () => {
+            if (!activeChatId) return showTemporaryMessage(copyAllBtn, 'ไม่มีแชท', 'bg-red-600');
+            const activeChat = chats.find(c => c.id === activeChatId);
+            if (activeChat && activeChat.messages.length > 0) {
+                const allText = activeChat.messages.map(msg => msg.text).join('\n\n---\n\n');
+                navigator.clipboard.writeText(allText).then(() => {
+                    showTemporaryMessage(copyAllBtn, 'คัดลอกแล้ว!', 'bg-green-600');
+                }).catch(() => showTemporaryMessage(copyAllBtn, 'ล้มเหลว', 'bg-red-600'));
+            } else {
+                showTemporaryMessage(copyAllBtn, 'ไม่มีข้อความ', 'bg-yellow-500');
+            }
+        };
+
+        // --- Deletion Modal ---
+        const showDeleteConfirmation = (type, id) => {
+            const item = type === 'chat' ? chats.find(c => c.id === id) : chats.find(c => c.id === activeChatId)?.messages.find(m => m.id === id);
+            if (!item) return;
+            const isChat = type === 'chat';
+            deleteModalText.textContent = `คุณแน่ใจหรือไม่ว่าต้องการลบ${isChat ? `แชท "${item.title}"` : 'ข้อความนี้'}? การกระทำนี้ไม่สามารถย้อนกลับได้`;
+            confirmDeleteBtn.dataset.deleteType = type;
+            confirmDeleteBtn.dataset.deleteId = id;
+            deleteModal.classList.remove('hidden');
+            deleteModal.classList.add('flex');
+        };
+        confirmDeleteBtn.addEventListener('click', () => {
+            const type = confirmDeleteBtn.dataset.deleteType;
+            const id = parseInt(confirmDeleteBtn.dataset.deleteId);
+            if (type === 'chat') {
+                chats = chats.filter(c => c.id !== id);
+                if (activeChatId === id) activeChatId = null;
+            } else {
+                const activeChat = chats.find(c => c.id === activeChatId);
+                if (activeChat) activeChat.messages = activeChat.messages.filter(m => m.id !== id);
+            }
+            deleteModal.classList.add('hidden');
+            deleteModal.classList.remove('flex');
+            renderApp();
+            saveChatsToLocalStorage();
+        });
+        cancelDeleteBtn.addEventListener('click', () => deleteModal.classList.add('hidden'));
+
+        // --- Helpers ---
+        const autoResizeTextarea = () => {
+            messageInput.style.height = 'auto';
+            messageInput.style.height = `${messageInput.scrollHeight}px`;
+        };
+        const showTemporaryMessage = (button, message, colorClass) => {
+            const originalContent = button.innerHTML;
+            button.innerHTML = message;
+            const originalClasses = button.className;
+            button.className = originalClasses.replace(/bg-(blue|gray)-[0-9]{2,3}/g, '').replace(/hover:bg-(blue|gray)-[0-9]{2,3}/g, '') + ` ${colorClass}`;
+            button.disabled = true;
+            setTimeout(() => {
+                button.innerHTML = originalContent;
+                button.className = originalClasses;
+                button.disabled = false;
+            }, 2000);
+        };
+
+        // --- Event Delegation for Message Actions ---
+        messagesContainer.addEventListener('click', (e) => {
+            const targetButton = e.target.closest('button');
+            if (!targetButton) return;
+            const messageWrapper = targetButton.closest('.group');
+            const messageId = parseInt(messageWrapper.dataset.messageId);
+            const activeChat = chats.find(c => c.id === activeChatId);
+            const message = activeChat?.messages.find(m => m.id === messageId);
+            if (!message) return;
+
+            if (targetButton.classList.contains('copy-msg-btn')) {
+                navigator.clipboard.writeText(message.text).then(() => {
+                    targetButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="text-green-400" viewBox="0 0 16 16"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/></svg>';
+                    setTimeout(() => targetButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M5.5 1.5A.5.5 0 0 1 6 1h4a.5.5 0 0 1 .5.5v1A.5.5 0 0 1 10 3H6a.5.5 0 0 1-.5-.5z"/></svg>', 1500);
+                });
+            } else if (targetButton.classList.contains('delete-msg-btn')) {
+                showDeleteConfirmation('message', messageId);
+            } else if (targetButton.classList.contains('edit-msg-btn')) {
+                const contentDiv = messageWrapper.querySelector('.message-content');
+                const editor = document.createElement('textarea');
+                editor.className = "w-full bg-gray-600 text-white rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none";
+                editor.value = message.text;
+                contentDiv.replaceWith(editor);
+                editor.style.height = `${editor.scrollHeight}px`;
+                editor.focus();
+                editor.addEventListener('input', () => { editor.style.height = 'auto'; editor.style.height = `${editor.scrollHeight}px`; });
+                const saveEdit = () => {
+                    const newText = editor.value.trim();
+                    if (newText) updateMessage(messageId, newText);
+                    else showDeleteConfirmation('message', messageId);
+                };
+                editor.addEventListener('blur', saveEdit);
+                editor.addEventListener('keydown', (evt) => {
+                    if (evt.key === 'Enter' && !evt.shiftKey) { evt.preventDefault(); editor.blur(); }
+                    if (evt.key === 'Escape') renderApp();
+                });
+            }
+        });
+
+        // --- Global Event Listeners ---
+        newChatBtn.addEventListener('click', createNewChat);
+        sendBtn.addEventListener('click', () => addMessage(messageInput.value));
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                addMessage(messageInput.value);
+            }
+        });
+        messageInput.addEventListener('input', autoResizeTextarea);
+        copyAllBtn.addEventListener('click', copyAllText);
+        editTitleBtn.addEventListener('click', renameChatTitle);
+        searchInput.addEventListener('input', () => renderMessages(searchInput.value));
+        sidebarToggleBtn.addEventListener('click', toggleSidebar);
+        sidebarOverlay.addEventListener('click', toggleSidebar);
+        window.addEventListener('resize', updateLayout);
+
+        // --- Initialization ---
+        loadChatsFromLocalStorage();
+        renderApp();
+        updateLayout();
+        
+        // Auto-select the most recent chat on load if one exists
+        if (chats.length > 0) {
+            const mostRecentChat = [...chats].sort((a,b) => b.lastModified - a.lastModified)[0];
+            switchChat(mostRecentChat.id);
+        }
+    });
+    </script>
+</body>
+</html>
