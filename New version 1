@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบจัดเก็บข้อความและสมุดบันทึก</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Sarabun & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- SortableJS for Drag & Drop -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <!-- html2canvas for Image Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body {
+            font-family: 'Sarabun', 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #2d3748; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #718096; }
+        mark { background-color: #f6e05e; color: #2d3748; padding: 0 2px; border-radius: 2px; }
+        .slide-in { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { transform: translateY(20px); opacity:0 } to { transform: translateY(0); opacity:1 } }
+        .fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+        .toast { animation: toastSlide 0.3s ease-out; }
+        @keyframes toastSlide { from { transform: translateX(100%); opacity:0 } to { transform: translateX(0); opacity:1 } }
+        .toast-exit { animation: toastExit 0.3s ease-out forwards; }
+        @keyframes toastExit { from { transform: translateX(0); opacity:1 } to { transform: translateX(100%); opacity:0 } }
+        .sortable-ghost { opacity: 0.4; background: #c8ebfb; }
+        .drag-handle { cursor: grab; }
+        .sortable-chosen .drag-handle { cursor: grabbing; }
+        .checklist-item { cursor: pointer; transition: all 0.3s ease-out; }
+        .checklist-item:hover { background-color: #eef2ff; }
+        .checklist-item.checked { opacity: 0; text-decoration: line-through; color: #9ca3af; transform: scale(0.95); }
+        #chat-sidebar { transition: transform 0.3s ease-in-out; }
+        #chat-sidebar.closed { transform: translateX(-100%); }
+        #chat-main-content { transition: margin-left 0.3s ease-in-out; }
+        .message-content { white-space: pre-wrap; word-break: break-word; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen antialiased">
+
+    <!-- Main Container for Message App -->
+    <div id="messageAppContainer" class="flex flex-col h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        <!-- Header -->
+        <div class="bg-sky-500 shadow-lg z-20">
+            <div class="px-4 py-4">
+                <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <h1 class="text-xl font-bold text-white">📝 จัดเก็บข้อความ</h1>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <!-- Global Search -->
+                        <div class="relative flex-grow max-w-xs">
+                            <input type="text" id="globalSearchInput" placeholder="🔍 ค้นหาทุกบันทึก..." class="w-full pl-4 pr-20 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-purple-300 text-gray-800">
+                            <button id="globalSearchBtn" class="absolute right-1 top-1/2 -translate-y-1/2 bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded-full text-sm">ค้นหา</button>
+                        </div>
+                        <button data-action="add-message" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full text-sm font-medium">➕ เพิ่ม</button>
+                        <button data-action="open-settings-modal" class="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded-lg text-sm">⚙️ ตั้งค่า</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Filter Controls -->
+        <div class="px-4 py-4 bg-white border-b space-y-3 text-gray-800">
+            <div id="categoryChips" class="flex flex-wrap gap-3 items-center"></div>
+            <div id="checklistControls" class="flex flex-wrap gap-3 items-center"></div>
+        </div>
+        <!-- Main Content Area -->
+        <div class="flex-1 overflow-y-auto text-gray-800">
+            <div id="messagesList" class="px-4 py-4 space-y-3"></div>
+        </div>
+    </div>
+
+    <!-- Main Container for Chat Notebook App -->
+    <div id="chatNotebookContainer" class="hidden h-screen">
+        <!-- Sidebar Overlay for mobile -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-30 hidden"></div>
+        <!-- Sidebar -->
+        <aside id="chat-sidebar" class="w-4/5 sm:w-1/3 md:w-1/4 lg:w-1/5 bg-gray-800 p-4 flex flex-col fixed top-0 left-0 h-full z-40">
+            <h1 class="text-xl font-bold mb-4">สมุดบันทึก</h1>
+            <button id="new-chat-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 mb-4"> + สร้างแชทใหม่ </button>
+            <div id="chat-list" class="flex-grow overflow-y-auto custom-scrollbar"></div>
+        </aside>
+        <!-- Main Content -->
+        <main id="chat-main-content" class="h-full flex flex-col bg-gray-900">
+            <!-- Header -->
+            <header class="bg-gray-800/50 backdrop-blur-sm p-4 flex flex-col sm:flex-row justify-between items-center border-b border-gray-700 gap-3">
+                <div class="flex items-center group w-full">
+                    <button data-action="show-message-app" class="p-2 rounded-full hover:bg-gray-700 mr-2 text-white" title="กลับไปหน้าจัดเก็บข้อความ">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8"/></svg>
+                    </button>
+                    <button id="sidebar-toggle-btn" class="p-2 rounded-full hover:bg-gray-700 mr-3 text-white">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/></svg>
+                    </button>
+                    <div class="flex items-center group flex-grow truncate">
+                        <h2 id="chat-title" class="text-lg font-semibold truncate">เลือกแชทเพื่อเริ่มต้น</h2>
+                        <button id="edit-title-btn" class="ml-2 p-1 rounded-full hover:bg-gray-700 opacity-0 group-hover:opacity-100 transition-opacity hidden">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2 w-full sm:w-auto">
+                    <div class="relative flex-grow">
+                        <input type="text" id="search-input" placeholder="ค้นหาในแชทนี้..." class="bg-gray-700 text-white placeholder-gray-400 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5 pl-10 hidden">
+                    </div>
+                    <button id="copy-all-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-3 rounded-lg transition duration-300 flex items-center" title="คัดลอกทั้งหมด">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M10.854 7.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 1 1 .708-.708L7.5 9.793l2.646-2.647a.5.5 0 0 1 .708 0"/><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M5.5 1.5A.5.5 0 0 1 6 1h4a.5.5 0 0 1 .5.5v1A.5.5 0 0 1 10 3H6a.5.5 0 0 1-.5-.5z"/></svg>
+                    </button>
+                    <!-- New Export Image Button -->
+                    <button id="export-chat-img-btn" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-3 rounded-lg transition duration-300 flex items-center" title="Export เป็นรูปภาพ">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M4.502 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/><path d="M14.002 13a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2V5A2 2 0 0 1 2 3a2 2 0 0 1 2-2h1.086a1 1 0 0 1 .707.293l.853.854A1 1 0 0 0 6.707 2h2.586a1 1 0 0 0 .707-.293l.853-.854A1 1 0 0 1 11.914 1H13a2 2 0 0 1 2 2v8zM2 4.5a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0M12 13a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1z"/></svg>
+                    </button>
+                </div>
+            </header>
+            <!-- Messages Area -->
+            <div id="messages-container" class="flex-grow p-4 overflow-y-auto custom-scrollbar">
+                <div id="welcome-screen" class="flex flex-col items-center justify-center h-full text-gray-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" fill="currentColor" viewBox="0 0 16 16"><path d="M5 10.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0-2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"/><path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2"/><path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1z"/></svg>
+                    <p class="text-center">สร้างแชทใหม่หรือเลือกแชทที่มีอยู่<br>เพื่อเริ่มจดบันทึก</p>
+                </div>
+            </div>
+            <!-- Input Area -->
+            <div id="input-area" class="p-4 bg-gray-800/50 border-t border-gray-700 hidden">
+                <div class="flex items-center bg-gray-700 rounded-lg p-2">
+                    <textarea id="message-input" class="w-full bg-transparent text-white placeholder-gray-400 focus:outline-none resize-none" rows="1" placeholder="พิมพ์ข้อความบันทึกของคุณ..."></textarea>
+                    <button id="paste-btn" class="ml-2 p-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition duration-300" title="วางข้อความ">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M5.5 1.5A.5.5 0 0 1 6 1h4a.5.5 0 0 1 .5.5v1A.5.5 0 0 1 10 3H6a.5.5 0 0 1-.5-.5zM8 5a.5.5 0 0 1 .5.5v4.5a.5.5 0 0 1-1 0V5.5A.5.5 0 0 1 8 5"/></svg>
+                    </button>
+                    <button id="send-btn" class="ml-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"> ส่ง </button>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Modals Container -->
+    <div id="modalsContainer">
+        <!-- Settings Modal -->
+        <div id="settingsModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4">
+            <div class="bg-white rounded-lg w-full max-w-md slide-in text-gray-800">
+                <div class="p-4 border-b flex justify-between items-center"><h2 class="text-lg font-semibold">ตั้งค่า</h2><button data-action="close-modal" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button></div>
+                <div class="p-6 space-y-4">
+                    <div>
+                        <h3 class="font-semibold mb-2">การแสดงผล</h3>
+                        <label for="titleFontSizeSlider" class="block text-sm font-medium">ขนาดหัวเรื่อง (<span id="titleFontSizeValue">20</span>px)</label>
+                        <input id="titleFontSizeSlider" type="range" min="16" max="36" step="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mt-2">
+                    </div>
+                    <div>
+                        <label for="messageFontSizeSlider" class="block text-sm font-medium">ขนาดข้อความหลัก (<span id="messageFontSizeValue">16</span>px)</label>
+                        <input id="messageFontSizeSlider" type="range" min="12" max="30" step="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mt-2">
+                    </div>
+                    <!-- Added Category Tag Font Size Slider -->
+                    <div>
+                        <label for="categoryTagFontSizeSlider" class="block text-sm font-medium">ขนาดป้ายหมวดหมู่ (<span id="categoryTagFontSizeValue">12</span>px)</label>
+                        <input id="categoryTagFontSizeSlider" type="range" min="8" max="18" step="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mt-2">
+                    </div>
+                    <div class="pt-4 mt-4 border-t">
+                        <h3 class="font-semibold mb-2">จัดการข้อมูล</h3>
+                        <div class="flex flex-wrap gap-2">
+                           <button data-action="copy-all" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium">📋 คัดลอกทั้งหมด</button>
+                           <button data-action="export" class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium">💾 Export JSON</button>
+                           <label for="importInput" class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">📥 Import JSON</label>
+                           <input id="importInput" type="file" accept="application/json" class="hidden"/>
+                           <button data-action="open-category-modal" class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm">⚙️ จัดการหมวดหมู่</button>
+                        </div>
+                    </div>
+                    <div class="pt-4 mt-4 border-t border-red-300">
+                        <label class="block text-sm font-medium text-red-700">โซนอันตราย</label>
+                        <p class="text-xs text-gray-500 mt-1 mb-3">การกระทำนี้ไม่สามารถย้อนกลับได้ ข้อมูลทั้งหมดจะถูกลบอย่างถาวร</p>
+                        <button data-action="confirm-reset" class="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold">ลบข้อมูลทั้งหมดและรีเซ็ต</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Message Modal -->
+        <div id="messageModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4">
+            <div class="bg-white rounded-lg w-full max-w-md slide-in text-gray-800">
+                <div class="p-4 border-b flex justify-between items-center"><h2 id="modalTitle" class="text-lg font-semibold">เพิ่มข้อความใหม่</h2><button data-action="close-modal" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button></div>
+                <form id="messageForm">
+                    <div class="p-4 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">หัวเรื่อง (ไม่บังคับ)</label>
+                            <input name="title" type="text" placeholder="ใส่หัวเรื่องที่นี่..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="block text-sm font-medium">ข้อความ</label>
+                                <div class="flex space-x-2">
+                                    <button type="button" data-action="insert-emoji" data-emoji="🔻" class="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-md text-sm transition" title="แทรกสัญลักษณ์ 🔻">🔻</button>
+                                    <button type="button" data-action="insert-emoji" data-emoji="🔲" class="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-md text-sm transition" title="แทรกสัญลักษณ์ 🔲">🔲</button>
+                                </div>
+                            </div>
+                            <textarea name="content" rows="8" placeholder="พิมพ์ข้อความที่นี่..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">หมวดหมู่</label>
+                            <select name="category" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"><option value="">เลือกหมวดหมู่</option></select>
+                        </div>
+                    </div>
+                    <div class="p-4 border-t flex space-x-2">
+                        <button type="button" data-action="close-modal" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">ยกเลิก</button>
+                        <button type="submit" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg">บันทึก</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <!-- Category Modal -->
+        <div id="categoryModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4">
+            <div class="bg-white rounded-lg w-full max-w-md slide-in text-gray-800">
+                <div class="p-4 border-b flex justify-between items-center"><h2 class="text-lg font-semibold">จัดการหมวดหมู่</h2><button data-action="close-modal" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button></div>
+                <div class="p-4">
+                    <form id="addCategoryForm" class="flex space-x-2 mb-4">
+                        <input name="name" type="text" placeholder="ชื่อหมวดหมู่ใหม่" required class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg">เพิ่ม</button>
+                    </form>
+                    <div class="text-xs text-gray-500 mb-2">ลาก ⠿ เพื่อจัดลำดับ, 🎨 เพื่อเลือกสี, ✏️ เพื่อแก้ชื่อ, 🗑️ เพื่อลบ</div>
+                    <div id="categoriesList" class="space-y-2 max-h-72 overflow-y-auto"></div>
+                </div>
+            </div>
+        </div>
+        <!-- Delete Confirmation Modal -->
+        <div id="deleteModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4">
+            <div class="bg-white rounded-lg w-full max-w-sm slide-in text-gray-800">
+                <div class="p-4 text-center">
+                    <div class="text-4xl mb-4">⚠️</div>
+                    <h3 class="text-lg font-semibold mb-2">ยืนยันการลบ</h3>
+                    <p id="deleteMessage" class="mb-4 break-words"></p>
+                    <div class="flex space-x-2">
+                        <button data-action="close-modal" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">ยกเลิก</button>
+                        <button id="confirmDeleteBtn" class="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg">ลบ</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Chat Delete Confirmation Modal -->
+        <div id="chat-delete-modal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center">
+            <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-11/12 max-w-sm">
+                <h3 class="text-lg font-bold mb-4">ยืนยันการลบ</h3>
+                <p id="chat-delete-modal-text" class="text-gray-300 mb-6"></p>
+                <div class="flex justify-end space-x-4">
+                    <button id="chat-cancel-delete-btn" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition-colors">ยกเลิก</button>
+                    <button id="chat-confirm-delete-btn" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-white transition-colors">ยืนยัน</button>
+                </div>
+            </div>
+        </div>
+        <!-- Global Search Modal -->
+        <div id="globalSearchModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4">
+            <div class="bg-white rounded-lg w-full max-w-2xl slide-in text-gray-800 flex flex-col h-full max-h-[90vh]">
+                <div class="p-4 border-b flex justify-between items-center">
+                    <h2 class="text-lg font-semibold">ผลการค้นหาทั้งหมด</h2>
+                    <button data-action="close-modal" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+                </div>
+                <div id="globalSearchResults" class="p-4 flex-1 overflow-y-auto"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="fixed top-20 right-4 z-[100] space-y-2"></div>
+
+<script>
+// --- Global Utility Functions ---
+function showToast(message, type = 'success') {
+    const toastContainer = document.getElementById('toastContainer');
+    const toastId = 'toast-' + Date.now();
+    const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' };
+    const colors = { success:'bg-green-500', error:'bg-red-500', info:'bg-blue-500', warning:'bg-yellow-500' };
+    const toast = document.createElement('div');
+    toast.id = toastId;
+    toast.className = `toast ${colors[type]} text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2 max-w-sm`;
+    toast.innerHTML = `<span class="text-lg">${icons[type]}</span><span class="flex-1 text-sm">${escapeHtml(message)}</span>`;
+    toastContainer.appendChild(toast);
+    setTimeout(()=> {
+        const el = document.getElementById(toastId);
+        if(el) {
+            el.classList.add('toast-exit');
+            setTimeout(()=> el.remove(), 300);
+        }
+    }, 3000);
+}
+
+function escapeHtml(text) {
+    if (typeof text !== 'string') return '';
+    const p = document.createElement('p');
+    p.textContent = text;
+    return p.innerHTML;
+}
+
+// --- App Manager to switch between apps and handle global actions ---
+const AppManager = {
+    messageApp: null,
+    chatNotebookApp: null,
+    backupInterval: null,
+
+    init() {
+        this.messageApp = new MessageApp();
+        this.chatNotebookApp = new ChatNotebookApp();
+
+        document.body.addEventListener('click', (e) => {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            const { action } = target.dataset;
+            if (action === 'show-chat-notebook') this.showView('chat-notebook');
+            else if (action === 'show-message-app') this.showView('message-app');
+            else if (action === 'close-modal') this.closeAllModals();
+        });
+
+        document.getElementById('globalSearchBtn').addEventListener('click', this.performGlobalSearch.bind(this));
+        document.getElementById('globalSearchInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.performGlobalSearch();
+        });
+        
+        this.startAutoBackup(10); // Backup every 10 minutes
+    },
+
+    showView(appName) {
+        const messageAppContainer = document.getElementById('messageAppContainer');
+        const chatNotebookContainer = document.getElementById('chatNotebookContainer');
+        if (appName === 'chat-notebook') {
+            messageAppContainer.classList.add('hidden');
+            chatNotebookContainer.classList.remove('hidden');
+            window.dispatchEvent(new Event('resize'));
+        } else {
+            chatNotebookContainer.classList.add('hidden');
+            messageAppContainer.classList.remove('hidden');
+        }
+    },
+
+    closeAllModals() {
+        document.querySelectorAll('#modalsContainer .fixed').forEach(m => {
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        });
+    },
+
+    performGlobalSearch() {
+        const searchTerm = document.getElementById('globalSearchInput').value.toLowerCase();
+        if (!searchTerm.trim()) return showToast('กรุณากรอกคำค้นหา', 'warning');
+
+        const messageData = JSON.parse(localStorage.getItem('messageAppData') || '{}');
+        const chatData = JSON.parse(localStorage.getItem('chatNotebookData') || '[]');
+        const results = [];
+
+        if (messageData.messages) {
+            messageData.messages.forEach(msg => {
+                if ((msg.title && msg.title.toLowerCase().includes(searchTerm)) || msg.content.toLowerCase().includes(searchTerm)) {
+                    results.push({ type: 'ข้อความ', title: msg.title || 'ไม่มีหัวเรื่อง', content: msg.content.substring(0, 150) + '...' });
+                }
+            });
+        }
+
+        chatData.forEach(chat => {
+            chat.messages.forEach(msg => {
+                if (msg.text.toLowerCase().includes(searchTerm)) {
+                    results.push({ type: 'สมุดบันทึก', title: `จาก: ${chat.title}`, content: msg.text.substring(0, 150) + '...' });
+                }
+            });
+        });
+
+        this.displayGlobalResults(results, searchTerm);
+    },
+
+    displayGlobalResults(results, term) {
+        const container = document.getElementById('globalSearchResults');
+        if (results.length === 0) {
+            container.innerHTML = `<p class="text-center text-gray-500 py-10">ไม่พบผลการค้นหาสำหรับ "${escapeHtml(term)}"</p>`;
+        } else {
+            container.innerHTML = results.map(r => {
+                const highlight = (text) => text.replace(new RegExp(term, 'gi'), match => `<mark>${match}</mark>`);
+                return `
+                <div class="border-b p-3 mb-2 hover:bg-gray-50 rounded-lg">
+                    <p class="font-bold text-sm ${r.type === 'ข้อความ' ? 'text-sky-600' : 'text-indigo-600'}">${r.type}</p>
+                    <h4 class="font-semibold text-gray-800">${highlight(escapeHtml(r.title))}</h4>
+                    <p class="text-gray-600 text-sm">${highlight(escapeHtml(r.content))}</p>
+                </div>`;
+            }).join('');
+        }
+        document.getElementById('globalSearchModal').classList.remove('hidden');
+        document.getElementById('globalSearchModal').classList.add('flex');
+    },
+
+    startAutoBackup(minutes) {
+        if (this.backupInterval) clearInterval(this.backupInterval);
+        this.backupInterval = setInterval(() => {
+            this.performBackup();
+        }, minutes * 60 * 1000);
+        console.log(`Auto backup scheduled every ${minutes} minutes.`);
+    },
+
+    performBackup() {
+        try {
+            const backupData = {
+                messageApp: JSON.parse(localStorage.getItem('messageAppData') || '{}'),
+                chatNotebook: JSON.parse(localStorage.getItem('chatNotebookData') || '[]'),
+                backupTimestamp: new Date().toISOString()
+            };
+            localStorage.setItem('autoBackupData', JSON.stringify(backupData));
+            console.log('Auto backup successful at', backupData.backupTimestamp);
+            showToast('สำรองข้อมูลอัตโนมัติสำเร็จ', 'info');
+        } catch (e) {
+            console.error('Auto backup failed', e);
+            showToast('การสำรองข้อมูลอัตโนมัติล้มเหลว', 'error');
+        }
+    }
+};
+
+// --- Message App ---
+class MessageApp {
+    constructor() {
+        this.state = this.loadState();
+        this.currentEditId = null;
+        this.deleteTarget = null;
+        this.sortableMessages = null;
+        this.sortableCategories = null;
+        this.init();
+    }
+    getDefaultState() {
+        const COLOR_PALETTE = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#F7B801", "#845EC2", "#D65DB1", "#FF9671", "#008F7A"];
+        return {
+            messages: [],
+            categories: ['งาน', 'ส่วนตัว', 'ไอเดีย', 'สำคัญ'].map((name, i) => ({ id: Date.now() + i, name, color: COLOR_PALETTE[i % COLOR_PALETTE.length] })),
+            settings: { titleFontSize: 20, messageFontSize: 16, categoryTagFontSize: 12 },
+            activeCategory: '',
+            checklistMode: false,
+        };
+    }
+    loadState() {
+        try {
+            const storedState = localStorage.getItem('messageAppData');
+            const defaultState = this.getDefaultState();
+            if (storedState) {
+                const parsedState = JSON.parse(storedState);
+                parsedState.settings = { ...defaultState.settings, ...parsedState.settings };
+                parsedState.checklistMode = parsedState.checklistMode || false;
+                parsedState.messages = parsedState.messages.map(m => ({ ...m, checked: m.checked || false }));
+                return parsedState;
+            }
+            return defaultState;
+        } catch (e) { return this.getDefaultState(); }
+    }
+    saveState() {
+        try {
+            localStorage.setItem('messageAppData', JSON.stringify(this.state));
+        } catch (e) { console.error("Failed to save state", e); }
+    }
+    init() {
+        this.bindEvents();
+        this.render();
+    }
+    bindEvents() {
+        document.getElementById('messageAppContainer').addEventListener('click', this.handleAction.bind(this));
+        document.getElementById('messageForm').addEventListener('submit', this.saveMessage.bind(this));
+        document.getElementById('addCategoryForm').addEventListener('submit', this.addCategory.bind(this));
+        document.getElementById('importInput').addEventListener('change', this.importJSON.bind(this));
+        document.getElementById('titleFontSizeSlider').addEventListener('input', e => this.updateSetting('titleFontSize', e.target.value));
+        document.getElementById('messageFontSizeSlider').addEventListener('input', e => this.updateSetting('messageFontSize', e.target.value));
+        document.getElementById('categoryTagFontSizeSlider').addEventListener('input', e => this.updateSetting('categoryTagFontSize', e.target.value));
+    }
+    handleAction(e) {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+        if (target.type !== 'submit') e.preventDefault();
+        const { action, id, name, emoji } = target.dataset;
+        const messageId = id ? parseInt(id, 10) : null;
+        const actions = {
+            'add-message': () => this.openMessageModal(),
+            'edit-message': () => this.openMessageModal(messageId),
+            'delete-message': () => this.confirmDelete('message', messageId),
+            'toggle-pin': () => this.togglePin(messageId),
+            'copy-message': () => { e.stopPropagation(); this.copyMessageById(messageId, target); },
+            'copy-all': () => this.copyAllMessages(),
+            'export': () => this.exportJSON(),
+            'open-category-modal': () => this.openModal('categoryModal'),
+            'edit-category': () => this.editCategory(name),
+            'delete-category': () => this.confirmDelete('category', name),
+            'select-category': () => this.setActiveCategory(name),
+            'open-settings-modal': () => this.openModal('settingsModal'),
+            'confirm-reset': () => this.confirmReset(),
+            'insert-emoji': () => this.insertEmoji(emoji),
+            'toggle-checklist-mode': () => this.toggleChecklistMode(),
+            'reset-checklist': () => this.resetChecklist(),
+            'check-item': () => this.checkItem(messageId),
+        };
+        if (actions[action]) actions[action]();
+    }
+    saveMessage(e) {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const title = formData.get('title').trim();
+        const content = formData.get('content').trim();
+        const category = formData.get('category');
+        if (!content) return showToast('กรุณากรอกข้อความ', 'warning');
+        if (this.currentEditId) {
+            const index = this.state.messages.findIndex(m => m.id === this.currentEditId);
+            if (index !== -1) {
+                this.state.messages[index] = { ...this.state.messages[index], title, content, category };
+                showToast('แก้ไขข้อความสำเร็จ');
+            }
+        } else {
+            this.state.messages.unshift({ id: Date.now(), title, content, category, pinned: false, checked: false });
+            showToast('เพิ่มข้อความสำเร็จ');
+        }
+        this.currentEditId = null;
+        AppManager.closeAllModals();
+        this.saveState();
+        this.render();
+    }
+    togglePin(id) {
+        const message = this.state.messages.find(m => m.id === id);
+        if (message) {
+            message.pinned = !message.pinned;
+            showToast(message.pinned ? 'ปักหมุดข้อความแล้ว' : 'ยกเลิกการปักหมุด');
+            this.saveState();
+            this.render();
+        }
+    }
+    addCategory(e) {
+        e.preventDefault();
+        const name = new FormData(e.target).get('name').trim();
+        if (!name) return showToast('กรุณากรอกชื่อหมวดหมู่', 'warning');
+        if (this.state.categories.some(c => c.name === name)) return showToast('หมวดหมู่นี้มีอยู่แล้ว', 'warning');
+        const COLOR_PALETTE = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#F7B801", "#845EC2", "#D65DB1", "#FF9671", "#008F7A"];
+        const color = COLOR_PALETTE[this.state.categories.length % COLOR_PALETTE.length];
+        this.state.categories.push({ id: Date.now(), name, color });
+        e.target.reset();
+        this.saveState();
+        this.render();
+        showToast('เพิ่มหมวดหมู่สำเร็จ');
+    }
+    editCategory(oldName) {
+        const newName = prompt('แก้ไขชื่อหมวดหมู่', oldName);
+        if (!newName || newName.trim() === oldName) return;
+        const trimmed = newName.trim();
+        if (this.state.categories.some(c => c.name === trimmed)) return showToast('มีหมวดหมู่นี้อยู่แล้ว', 'warning');
+        const category = this.state.categories.find(c => c.name === oldName);
+        if (category) category.name = trimmed;
+        this.state.messages.forEach(m => { if (m.category === oldName) m.category = trimmed; });
+        if (this.state.activeCategory === oldName) this.state.activeCategory = trimmed;
+        this.saveState();
+        this.render();
+        showToast(`เปลี่ยนชื่อหมวดหมู่เป็น "${trimmed}" สำเร็จ`);
+    }
+    updateCategoryColor(id, color) {
+        const category = this.state.categories.find(c => c.id === id);
+        if (category) { category.color = color; this.saveState(); this.render(); }
+    }
+    confirmDelete(type, id) {
+        this.deleteTarget = { type, id };
+        let message = "คุณแน่ใจหรือไม่ที่จะลบรายการนี้?";
+        if (type === 'message') {
+            const msg = this.state.messages.find(m => m.id === id);
+            const preview = msg.title || msg.content;
+            message = `คุณแน่ใจหรือไม่ที่จะลบ: "${escapeHtml(preview.slice(0, 50))}..."?`;
+        } else if (type === 'category') {
+            message = `คุณแน่ใจหรือไม่ที่จะลบหมวดหมู่ "${escapeHtml(id)}"?`;
+        }
+        document.getElementById('deleteMessage').innerHTML = message;
+        document.getElementById('confirmDeleteBtn').onclick = () => this.executeDelete();
+        this.openModal('deleteModal');
+    }
+    confirmReset() {
+        this.deleteTarget = { type: 'reset' };
+        document.getElementById('deleteMessage').innerHTML = "คุณแน่ใจหรือไม่ที่จะลบข้อมูลทั้งหมด? การกระทำนี้ไม่สามารถย้อนกลับได้";
+        document.getElementById('confirmDeleteBtn').onclick = () => this.executeReset();
+        this.openModal('deleteModal');
+    }
+    executeDelete() {
+        const { type, id } = this.deleteTarget;
+        if (type === 'message') {
+            this.state.messages = this.state.messages.filter(m => m.id !== id);
+        } else if (type === 'category') {
+            this.state.categories = this.state.categories.filter(c => c.name !== id);
+            this.state.messages.forEach(m => { if (m.category === id) m.category = ''; });
+            if (this.state.activeCategory === id) this.state.activeCategory = '';
+        }
+        showToast('ลบรายการสำเร็จ');
+        AppManager.closeAllModals();
+        this.saveState();
+        this.render();
+    }
+    executeReset() {
+        try {
+            localStorage.removeItem('messageAppData');
+            showToast('รีเซ็ตข้อมูลทั้งหมดสำเร็จแล้ว', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } catch (e) { showToast('เกิดข้อผิดพลาดในการรีเซ็ตข้อมูล', 'error'); }
+        AppManager.closeAllModals();
+    }
+    insertEmoji(emoji) {
+        const textarea = document.querySelector('#messageModal textarea[name="content"]');
+        if (!textarea) return;
+        const startPos = textarea.selectionStart, endPos = textarea.selectionEnd;
+        textarea.value = textarea.value.substring(0, startPos) + emoji + textarea.value.substring(endPos);
+        textarea.focus();
+    }
+    setActiveCategory(name) {
+        this.state.activeCategory = name;
+        this.saveState();
+        this.render();
+    }
+    updateSetting(key, value) {
+        this.state.settings[key] = Number(value);
+        this.saveState();
+        this.render();
+    }
+    toggleChecklistMode() {
+        this.state.checklistMode = !this.state.checklistMode;
+        showToast(this.state.checklistMode ? 'เปิดโหมดเช็คลิสต์' : 'ออกจากโหมดเช็คลิสต์', 'info');
+        this.saveState();
+        this.render();
+    }
+    resetChecklist() {
+        this.state.messages.forEach(m => { if (m.category === this.state.activeCategory) m.checked = false; });
+        showToast(`รีเซ็ตเช็คลิสต์ในหมวด "${escapeHtml(this.state.activeCategory)}"`, 'success');
+        this.saveState();
+        this.render();
+    }
+    checkItem(id) {
+        const itemElement = document.querySelector(`[data-id="${id}"].checklist-item`);
+        if (!itemElement) return;
+        itemElement.classList.add('checked');
+        setTimeout(() => {
+            const message = this.state.messages.find(m => m.id === id);
+            if (message) { message.checked = true; this.saveState(); this.render(); }
+        }, 300);
+    }
+    render() {
+        this.applySettings();
+        this.renderCategoryChips();
+        this.renderChecklistControls();
+        this.renderMessages();
+        this.renderCategoriesList();
+        this.initDragAndDrop();
+    }
+    applySettings() {
+        const { titleFontSize, messageFontSize, categoryTagFontSize } = this.state.settings;
+        document.getElementById('titleFontSizeSlider').value = titleFontSize;
+        document.getElementById('titleFontSizeValue').textContent = titleFontSize;
+        document.getElementById('messageFontSizeSlider').value = messageFontSize;
+        document.getElementById('messageFontSizeValue').textContent = messageFontSize;
+        document.getElementById('categoryTagFontSizeSlider').value = categoryTagFontSize;
+        document.getElementById('categoryTagFontSizeValue').textContent = categoryTagFontSize;
+    }
+    renderCategoryChips() {
+        const container = document.getElementById('categoryChips');
+        let html = `<button data-action="show-chat-notebook" class="bg-yellow-400 hover:bg-yellow-500 text-gray-800 px-4 py-2 rounded-full text-sm border border-yellow-500 transition font-semibold">🗒️ สมุดบันทึก</button>`;
+        html += `<button data-action="select-category" data-name="" class="${this.state.activeCategory === '' ? 'bg-sky-600 text-white' : 'bg-gray-100 text-gray-800'} px-4 py-2 rounded-full text-sm border transition font-semibold">📂 ทั้งหมด</button>`;
+        html += this.state.categories.map(cat => {
+            const isActive = this.state.activeCategory === cat.name;
+            const textColor = this.getContrastingTextColor(cat.color);
+            return `<button data-action="select-category" data-name="${escapeHtml(cat.name)}" style="${isActive ? `background-color:${cat.color}; border-color:${cat.color}; color:${textColor};` : `color:${cat.color}; border-color:${cat.color};`}" class="px-4 py-2 rounded-full text-sm border transition font-medium">${escapeHtml(cat.name)}</button>`;
+        }).join('');
+        container.innerHTML = html;
+    }
+    renderChecklistControls() {
+        const container = document.getElementById('checklistControls');
+        if (!this.state.activeCategory) { container.innerHTML = ''; return; }
+        const toggleButtonText = this.state.checklistMode ? '❌ ออกจากโหมดเช็คลิสต์' : '✔️ เปิดโหมดเช็คลิสต์';
+        let html = `<button data-action="toggle-checklist-mode" class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-full text-sm font-medium">${toggleButtonText}</button>`;
+        if (this.state.checklistMode && this.state.messages.some(m => m.category === this.state.activeCategory && m.checked)) {
+            html += `<button data-action="reset-checklist" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-full text-sm font-medium">🔄 รีเซ็ตเช็คลิสต์</button>`;
+        }
+        container.innerHTML = html;
+    }
+    renderMessages() {
+        const container = document.getElementById('messagesList');
+        const catFilter = this.state.activeCategory;
+        const isChecklist = this.state.checklistMode && this.state.activeCategory;
+        let filtered = this.state.messages.filter(m => !catFilter || m.category === catFilter);
+        if (isChecklist) {
+            filtered = filtered.filter(m => !m.checked);
+        } else {
+            filtered.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+        }
+        if (filtered.length === 0) {
+            container.innerHTML = `<div class="text-center py-12 text-gray-500"><div class="text-4xl mb-4">${isChecklist ? '🎉' : '📝'}</div><p>${isChecklist ? 'เยี่ยม! ไม่มีรายการคงค้าง' : 'ไม่พบข้อความ'}</p></div>`;
+            return;
+        }
+        container.innerHTML = filtered.map((m, index) => {
+            const cat = this.state.categories.find(c => c.name === m.category);
+            const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+            if (isChecklist) {
+                return `<div class="checklist-item ${rowBg} rounded-lg shadow-sm border p-2 flex items-center gap-2 fade-in" data-action="check-item" data-id="${m.id}">
+                    <div class="text-xl">${m.content.trim().startsWith('🔻') ? '🔻' : '🔲'}</div>
+                    <div class="flex-grow min-w-0">
+                        ${m.title ? `<h3 class="font-bold text-gray-800 truncate" style="font-size: ${this.state.settings.titleFontSize * 0.85}px;" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</h3>` : ''}
+                        <div class="text-gray-700 leading-snug truncate" style="font-size: ${this.state.settings.messageFontSize * 0.85}px;">${escapeHtml(m.content).split('\n')[0]}</div>
+                    </div>
+                    <button data-action="copy-message" data-id="${m.id}" class="text-green-600 hover:text-green-700 p-1.5 text-lg shrink-0" title="คัดลอก">📋</button>
+                </div>`;
+            }
+            const contentWithBreaks = m.content.split('\n').map(line => escapeHtml(line)).join('<br />');
+            return `<div class="${rowBg} rounded-lg shadow-sm border p-3 fade-in flex gap-2" data-id="${m.id}">
+                <div class="drag-handle text-gray-400 text-xl self-center" title="ลากเพื่อจัดลำดับ">⠿</div>
+                <div class="flex-grow min-w-0">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2 flex-grow min-w-0">
+                            <span class="font-medium px-2 py-0.5 rounded-full shrink-0" style="font-size: ${this.state.settings.categoryTagFontSize}px; background-color: ${cat ? cat.color : '#A9A9A9'}; color: ${this.getContrastingTextColor(cat ? cat.color : '#A9A9A9')};">${escapeHtml(m.category || 'ไม่มีหมวดหมู่')}</span>
+                            ${m.title ? `<h3 class="font-bold text-gray-900 truncate" style="font-size: ${this.state.settings.titleFontSize}px;" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</h3>` : ''}
+                        </div>
+                        <div class="flex items-center space-x-0.5 ml-2 shrink-0">
+                            <button data-action="toggle-pin" data-id="${m.id}" class="hover:bg-gray-200 rounded-full p-1.5 text-lg" title="${m.pinned ? 'ยกเลิกปักหมุด' : 'ปักหมุด'}">${m.pinned ? '📌' : '📍'}</button>
+                            <button data-action="copy-message" data-id="${m.id}" class="text-green-600 hover:text-green-700 p-1.5 text-lg" title="คัดลอก">📋</button>
+                            <button data-action="edit-message" data-id="${m.id}" class="text-blue-600 hover:text-blue-700 p-1.5 text-lg" title="แก้ไข">✏️</button>
+                            <button data-action="delete-message" data-id="${m.id}" class="text-red-600 hover:text-red-700 p-1.5 text-lg" title="ลบ">🗑️</button>
+                        </div>
+                    </div>
+                    <div class="text-gray-800 leading-relaxed break-words pt-1" style="font-size: ${this.state.settings.messageFontSize}px;">${contentWithBreaks}</div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+    renderCategoriesList() {
+        const container = document.getElementById('categoriesList');
+        if (this.state.categories.length === 0) { container.innerHTML = `<div class="text-gray-500 text-center py-6">ยังไม่มีหมวดหมู่</div>`; return; }
+        container.innerHTML = this.state.categories.map(c => `
+        <div class="flex items-center justify-between bg-gray-50 px-3 py-2 rounded-lg" data-id="${c.id}">
+            <div class="drag-handle text-gray-400 text-xl" title="ลากเพื่อจัดลำดับ">⠿</div>
+            <input type="color" value="${escapeHtml(c.color)}" oninput="AppManager.messageApp.updateCategoryColor(${c.id}, this.value)" class="w-8 h-8 p-0 border-none rounded cursor-pointer mx-2" title="เปลี่ยนสี">
+            <span class="text-gray-800 flex-1">${escapeHtml(c.name)}</span>
+            <div class="flex gap-1 items-center">
+                <button data-action="edit-category" data-name="${escapeHtml(c.name)}" class="text-blue-600 hover:text-blue-800 p-2" title="แก้ไขชื่อ">✏️</button>
+                <button data-action="delete-category" data-name="${escapeHtml(c.name)}" class="text-red-600 hover:text-red-800 p-2" title="ลบหมวดหมู่">🗑️</button>
+            </div>
+        </div>`).join('');
+    }
+    initDragAndDrop() {
+        const isChecklist = this.state.checklistMode;
+        const msgContainer = document.getElementById('messagesList');
+        if (this.sortableMessages) this.sortableMessages.destroy();
+        if (!isChecklist) {
+            this.sortableMessages = new Sortable(msgContainer, { animation: 150, handle: '.drag-handle', onEnd: (evt) => {
+                const [movedItem] = this.state.messages.splice(evt.oldIndex, 1);
+                this.state.messages.splice(evt.newIndex, 0, movedItem);
+                this.saveState(); this.render();
+            }});
+        }
+        const catContainer = document.getElementById('categoriesList');
+        if (this.sortableCategories) this.sortableCategories.destroy();
+        this.sortableCategories = new Sortable(catContainer, { animation: 150, handle: '.drag-handle', onEnd: (evt) => {
+            const [movedItem] = this.state.categories.splice(evt.oldIndex, 1);
+            this.state.categories.splice(evt.newIndex, 0, movedItem);
+            this.saveState(); this.render();
+        }});
+    }
+    openMessageModal(id = null) {
+        this.currentEditId = id;
+        const form = document.getElementById('messageForm');
+        form.reset();
+        document.getElementById('modalTitle').textContent = id ? 'แก้ไขข้อความ' : 'เพิ่มข้อความใหม่';
+        const categorySelect = form.querySelector('[name="category"]');
+        categorySelect.innerHTML = '<option value="">เลือกหมวดหมู่</option>' + this.state.categories.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+        if (id) {
+            const message = this.state.messages.find(m => m.id === id);
+            if (message) {
+                form.querySelector('[name="title"]').value = message.title || '';
+                form.querySelector('[name="content"]').value = message.content;
+                form.querySelector('[name="category"]').value = message.category || '';
+            }
+        }
+        this.openModal('messageModal');
+    }
+    openModal(modalId) {
+        document.getElementById(modalId).classList.remove('hidden');
+        document.getElementById(modalId).classList.add('flex');
+    }
+    getContrastingTextColor(hex) {
+        if (!hex) return '#000000';
+        const r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
+        return ((((r * 299) + (g * 587) + (b * 114)) / 1000) >= 128) ? '#000000' : '#FFFFFF';
+    }
+    debounce(func, delay) {
+        let timeout;
+        return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); };
+    }
+    copyMessageById(id, buttonElement) {
+        const msg = this.state.messages.find(m => m.id === id);
+        if (msg) this.copyTextToClipboard(msg.content, 'คัดลอกข้อความสำเร็จ', buttonElement);
+    }
+    copyAllMessages() {
+        const allContent = this.state.messages.map(m => m.content).join('\n\n---\n\n');
+        if (allContent) this.copyTextToClipboard(allContent, `คัดลอก ${this.state.messages.length} ข้อความสำเร็จ`);
+        else showToast('ไม่มีข้อความให้คัดลอก', 'info');
+    }
+    copyTextToClipboard(text, successMessage, buttonElement) {
+        navigator.clipboard.writeText(text).then(() => {
+            showToast(successMessage);
+            if (buttonElement) {
+                const originalContent = buttonElement.innerHTML;
+                buttonElement.innerHTML = '✅';
+                setTimeout(() => { buttonElement.innerHTML = originalContent; }, 2000);
+            }
+        }).catch(() => showToast('ไม่สามารถคัดลอกได้', 'error'));
+    }
+    exportJSON() {
+        const dataStr = JSON.stringify(this.state, null, 2);
+        const blob = new Blob([dataStr], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `messages-backup-${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Export สำเร็จ');
+    }
+    async importJSON(event) {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const importedState = JSON.parse(text);
+            if (!importedState.messages || !importedState.categories) throw new Error("Invalid file format");
+            if (confirm('ต้องการแทนที่ข้อมูลเดิมทั้งหมดด้วยไฟล์ที่นำเข้าใช่ไหม?')) {
+                this.state = { ...this.getDefaultState(), ...importedState };
+                this.saveState(); this.render(); showToast('Import สำเร็จ');
+            }
+        } catch (e) { showToast('ไฟล์ไม่ถูกต้องหรือไม่สามารถอ่านได้', 'error'); }
+        finally { event.target.value = ''; }
+    }
+}
+
+// --- Chat Notebook App ---
+class ChatNotebookApp {
+    constructor() {
+        this.sidebar = document.getElementById('chat-sidebar');
+        this.sidebarOverlay = document.getElementById('sidebar-overlay');
+        this.mainContent = document.getElementById('chat-main-content');
+        this.chatList = document.getElementById('chat-list');
+        this.chatTitle = document.getElementById('chat-title');
+        this.messagesContainer = document.getElementById('messages-container');
+        this.messageInput = document.getElementById('message-input');
+        this.welcomeScreen = document.getElementById('welcome-screen');
+        this.inputArea = document.getElementById('input-area');
+        this.deleteModal = document.getElementById('chat-delete-modal');
+        this.deleteModalText = document.getElementById('chat-delete-modal-text');
+        this.confirmDeleteBtn = document.getElementById('chat-confirm-delete-btn');
+        this.exportImgBtn = document.getElementById('export-chat-img-btn'); // New button
+        this.chats = [];
+        this.activeChatId = null;
+    }
+    init() {
+        this.loadChatsFromLocalStorage();
+        this.bindEvents();
+        this.renderApp();
+        this.updateLayout();
+        if (this.chats.length > 0) {
+            const mostRecentChat = [...this.chats].sort((a,b) => b.lastModified - a.lastModified)[0];
+            this.switchChat(mostRecentChat.id);
+        }
+    }
+    bindEvents() {
+        document.getElementById('new-chat-btn').addEventListener('click', this.createNewChat.bind(this));
+        document.getElementById('send-btn').addEventListener('click', () => this.addMessage(this.messageInput.value));
+        document.getElementById('paste-btn').addEventListener('click', this.pasteText.bind(this));
+        this.messageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.addMessage(this.messageInput.value); } });
+        this.messageInput.addEventListener('input', this.autoResizeTextarea.bind(this));
+        document.getElementById('copy-all-btn').addEventListener('click', this.copyAllText.bind(this));
+        document.getElementById('edit-title-btn').addEventListener('click', this.renameChatTitle.bind(this));
+        document.getElementById('search-input').addEventListener('input', (e) => this.renderMessages(e.target.value));
+        document.getElementById('sidebar-toggle-btn').addEventListener('click', this.toggleSidebar.bind(this));
+        this.sidebarOverlay.addEventListener('click', this.toggleSidebar.bind(this));
+        window.addEventListener('resize', this.updateLayout.bind(this));
+        this.confirmDeleteBtn.addEventListener('click', this.handleConfirmDelete.bind(this));
+        document.getElementById('chat-cancel-delete-btn').addEventListener('click', () => this.deleteModal.classList.add('hidden'));
+        this.messagesContainer.addEventListener('click', this.handleMessageActions.bind(this));
+        this.exportImgBtn.addEventListener('click', this.exportChatAsImage.bind(this)); // New event
+    }
+    saveChatsToLocalStorage = () => localStorage.setItem('chatNotebookData', JSON.stringify(this.chats));
+    loadChatsFromLocalStorage = () => {
+        const data = localStorage.getItem('chatNotebookData');
+        if (data) {
+            this.chats = JSON.parse(data);
+            this.chats.forEach(chat => { chat.messages.forEach((msg, index) => { if (!msg.sender) msg.sender = (index % 2 === 0) ? 'other' : 'user'; }); });
+        }
+    };
+    updateLayout = () => {
+        const sidebarIsOpen = !this.sidebar.classList.contains('closed');
+        const isMobile = window.innerWidth < 640;
+        this.mainContent.style.marginLeft = isMobile ? '0px' : (sidebarIsOpen ? `${this.sidebar.offsetWidth}px` : '0px');
+        this.sidebarOverlay.classList.toggle('hidden', !isMobile || !sidebarIsOpen);
+    };
+    toggleSidebar = () => { this.sidebar.classList.toggle('closed'); this.updateLayout(); };
+    renderChatList = () => {
+        this.chatList.innerHTML = '';
+        if (this.chats.length === 0) { this.chatList.innerHTML = '<p class="text-gray-500 text-center px-2">ยังไม่มีแชท</p>'; return; }
+        [...this.chats].sort((a, b) => b.lastModified - a.lastModified).forEach(chat => {
+            const isActive = chat.id === this.activeChatId;
+            const chatElement = document.createElement('div');
+            chatElement.className = `p-3 my-1 rounded-lg cursor-pointer transition duration-200 flex justify-between items-center ${isActive ? 'bg-indigo-600 text-white' : 'hover:bg-gray-700'}`;
+            chatElement.dataset.chatId = chat.id;
+            chatElement.innerHTML = `<span class="truncate">${escapeHtml(chat.title)}</span><button class="delete-chat-btn text-xs ml-2 p-1 rounded-full flex-shrink-0 ${isActive ? 'hover:bg-indigo-500' : 'hover:bg-gray-600'}" title="ลบแชทนี้">&times;</button>`;
+            chatElement.querySelector('.delete-chat-btn').addEventListener('click', (e) => { e.stopPropagation(); this.showDeleteConfirmation('chat', chat.id); });
+            chatElement.addEventListener('click', () => { this.switchChat(chat.id); if (window.innerWidth < 640) this.toggleSidebar(); });
+            this.chatList.appendChild(chatElement);
+        });
+    };
+    renderMessages = (searchTerm = '') => {
+        this.messagesContainer.innerHTML = '';
+        this.messagesContainer.appendChild(this.welcomeScreen);
+        if (!this.activeChatId) {
+            this.welcomeScreen.style.display = 'flex';
+            this.inputArea.classList.add('hidden');
+            document.getElementById('edit-title-btn').classList.add('hidden');
+            document.getElementById('search-input').classList.add('hidden');
+            this.chatTitle.textContent = 'เลือกแชทเพื่อเริ่มต้น';
+            return;
+        }
+        this.welcomeScreen.style.display = 'none';
+        this.inputArea.classList.remove('hidden');
+        document.getElementById('edit-title-btn').classList.remove('hidden');
+        document.getElementById('search-input').classList.remove('hidden');
+        const activeChat = this.chats.find(c => c.id === this.activeChatId);
+        if (!activeChat) return;
+        this.chatTitle.textContent = activeChat.title;
+        const messagesToRender = searchTerm ? activeChat.messages.filter(msg => msg.text.toLowerCase().includes(searchTerm.toLowerCase())) : activeChat.messages;
+        if (messagesToRender.length === 0 && activeChat.messages.length > 0) {
+            this.messagesContainer.innerHTML += `<p class="text-center text-gray-500">ไม่พบข้อความที่ตรงกับ "${escapeHtml(searchTerm)}"</p>`;
+        }
+        messagesToRender.forEach(msg => {
+            const isUser = msg.sender === 'user';
+            const messageRow = document.createElement('div');
+            messageRow.className = `w-full flex ${isUser ? 'justify-end' : 'justify-start'}`;
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = 'group relative mb-2 max-w-4/5';
+            messageWrapper.dataset.messageId = msg.id;
+            let formattedText = escapeHtml(msg.text);
+            if (searchTerm) {
+                formattedText = formattedText.replace(new RegExp(searchTerm, 'gi'), match => `<mark>${match}</mark>`);
+            }
+            messageWrapper.innerHTML = `
+                <div class="mb-1"><div class="${isUser ? 'bg-indigo-600' : 'bg-gray-700'} rounded-lg p-3 inline-block max-w-full"><div class="message-content">${formattedText}</div></div></div>
+                <div class="absolute bottom-0 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${isUser ? 'right-0' : 'left-0'}">
+                    <button class="copy-msg-btn p-1 hover:text-white text-gray-400 rounded" title="คัดลอก"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M5.5 1.5A.5.5 0 0 1 6 1h4a.5.5 0 0 1 .5.5v1A.5.5 0 0 1 10 3H6a.5.5 0 0 1-.5-.5z"/></svg></button>
+                    <button class="edit-msg-btn p-1 hover:text-white text-gray-400 rounded" title="แก้ไข"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/></svg></button>
+                    <button class="delete-msg-btn p-1 hover:text-red-500 text-gray-400 rounded" title="ลบ"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/></svg></button>
+                </div>`;
+            messageRow.appendChild(messageWrapper);
+            this.messagesContainer.appendChild(messageRow);
+        });
+        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+    };
+    renderApp = () => { this.renderChatList(); this.renderMessages(document.getElementById('search-input').value); };
+    createNewChat = () => {
+        let maxNum = 0;
+        this.chats.forEach(chat => { const match = chat.title.match(/^บันทึกที่ (\d+)$/); if (match && parseInt(match[1]) > maxNum) maxNum = parseInt(match[1]); });
+        const newChat = { id: Date.now(), title: `บันทึกที่ ${maxNum + 1}`, messages: [], lastModified: Date.now() };
+        this.chats.push(newChat);
+        this.switchChat(newChat.id);
+    };
+    switchChat = (chatId) => { this.activeChatId = chatId; document.getElementById('search-input').value = ''; this.renderApp(); };
+    addMessage = (text) => {
+        if (!text.trim() || !this.activeChatId) return;
+        const activeChat = this.chats.find(c => c.id === this.activeChatId);
+        if (activeChat) {
+            const lastMessage = activeChat.messages[activeChat.messages.length - 1];
+            activeChat.messages.push({ id: Date.now(), text: text, sender: lastMessage?.sender === 'user' ? 'other' : 'user' });
+            activeChat.lastModified = Date.now();
+            this.messageInput.value = ''; this.autoResizeTextarea();
+            this.renderApp(); this.saveChatsToLocalStorage();
+        }
+    };
+    updateMessage = (messageId, newText) => {
+        const activeChat = this.chats.find(c => c.id === this.activeChatId);
+        const message = activeChat?.messages.find(m => m.id === messageId);
+        if (message) { message.text = newText; activeChat.lastModified = Date.now(); this.saveChatsToLocalStorage(); this.renderApp(); }
+    };
+    renameChatTitle = () => {
+        if (!this.activeChatId) return;
+        const activeChat = this.chats.find(c => c.id === this.activeChatId);
+        const input = document.createElement('input');
+        input.type = 'text'; input.value = activeChat.title;
+        input.className = 'bg-gray-600 text-lg font-semibold rounded px-2 py-0 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+        this.chatTitle.replaceWith(input); input.focus(); input.select();
+        const saveTitle = () => {
+            const newTitle = input.value.trim();
+            if (newTitle && newTitle !== activeChat.title) { activeChat.title = newTitle; activeChat.lastModified = Date.now(); this.saveChatsToLocalStorage(); }
+            input.replaceWith(this.chatTitle); this.renderApp();
+        };
+        input.addEventListener('blur', saveTitle);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); else if (e.key === 'Escape') { input.value = activeChat.title; input.blur(); } });
+    };
+    copyAllText = () => {
+        if (!this.activeChatId) return this.showTemporaryMessage(document.getElementById('copy-all-btn'), 'ไม่มีแชท', 'bg-red-600');
+        const activeChat = this.chats.find(c => c.id === this.activeChatId);
+        if (activeChat && activeChat.messages.length > 0) {
+            const allText = activeChat.messages.map(msg => msg.text).join('\n');
+            navigator.clipboard.writeText(allText).then(() => this.showTemporaryMessage(document.getElementById('copy-all-btn'), 'คัดลอกแล้ว!', 'bg-green-600')).catch(() => this.showTemporaryMessage(document.getElementById('copy-all-btn'), 'ล้มเหลว', 'bg-red-600'));
+        } else { this.showTemporaryMessage(document.getElementById('copy-all-btn'), 'ไม่มีข้อความ', 'bg-yellow-500'); }
+    };
+    pasteText = async () => {
+        try {
+            if (!navigator.clipboard || !navigator.clipboard.readText) return;
+            this.messageInput.value += await navigator.clipboard.readText();
+            this.messageInput.focus(); this.autoResizeTextarea();
+        } catch (err) { console.error('Failed to read clipboard contents: ', err); }
+    };
+    showDeleteConfirmation = (type, id) => {
+        const item = type === 'chat' ? this.chats.find(c => c.id === id) : this.chats.find(c => c.id === this.activeChatId)?.messages.find(m => m.id === id);
+        if (!item) return;
+        this.deleteModalText.textContent = `คุณแน่ใจหรือไม่ว่าต้องการลบ${type === 'chat' ? `แชท "${escapeHtml(item.title)}"` : 'ข้อความนี้'}? การกระทำนี้ไม่สามารถย้อนกลับได้`;
+        this.confirmDeleteBtn.dataset.deleteType = type; this.confirmDeleteBtn.dataset.deleteId = id;
+        this.deleteModal.classList.remove('hidden');
+        this.deleteModal.classList.add('flex');
+    };
+    handleConfirmDelete() {
+        const type = this.confirmDeleteBtn.dataset.deleteType;
+        const id = parseInt(this.confirmDeleteBtn.dataset.deleteId);
+        if (type === 'chat') {
+            this.chats = this.chats.filter(c => c.id !== id);
+            if (this.activeChatId === id) this.activeChatId = null;
+        } else {
+            const activeChat = this.chats.find(c => c.id === this.activeChatId);
+            if (activeChat) activeChat.messages = activeChat.messages.filter(m => m.id !== id);
+        }
+        this.deleteModal.classList.add('hidden');
+        this.renderApp(); this.saveChatsToLocalStorage();
+    }
+    handleMessageActions(e) {
+        const targetButton = e.target.closest('button');
+        if (!targetButton) return;
+        const messageWrapper = targetButton.closest('.group');
+        const messageId = parseInt(messageWrapper.dataset.messageId);
+        const activeChat = this.chats.find(c => c.id === this.activeChatId);
+        const message = activeChat?.messages.find(m => m.id === messageId);
+        if (!message) return;
+        if (targetButton.classList.contains('copy-msg-btn')) {
+            navigator.clipboard.writeText(message.text).then(() => {
+                targetButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="text-green-400" viewBox="0 0 16 16"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/></svg>`;
+                setTimeout(() => targetButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M5.5 1.5A.5.5 0 0 1 6 1h4a.5.5 0 0 1 .5.5v1A.5.5 0 0 1 10 3H6a.5.5 0 0 1-.5-.5z"/></svg>`, 1500);
+            });
+        } else if (targetButton.classList.contains('delete-msg-btn')) {
+            this.showDeleteConfirmation('message', messageId);
+        } else if (targetButton.classList.contains('edit-msg-btn')) {
+            const contentDiv = messageWrapper.querySelector('.message-content');
+            const editor = document.createElement('textarea');
+            editor.className = "w-full bg-gray-600 text-white rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none";
+            editor.value = message.text; contentDiv.replaceWith(editor);
+            editor.style.height = `${editor.scrollHeight}px`; editor.focus();
+            editor.addEventListener('input', () => { editor.style.height = 'auto'; editor.style.height = `${editor.scrollHeight}px`; });
+            const saveEdit = () => { const newText = editor.value.trim(); if (newText) this.updateMessage(messageId, newText); else this.showDeleteConfirmation('message', messageId); };
+            editor.addEventListener('blur', saveEdit);
+            editor.addEventListener('keydown', (evt) => { if (evt.key === 'Enter' && !evt.shiftKey) { evt.preventDefault(); editor.blur(); } if (evt.key === 'Escape') this.renderApp(); });
+        }
+    }
+    autoResizeTextarea = () => { this.messageInput.style.height = 'auto'; this.messageInput.style.height = `${this.messageInput.scrollHeight}px`; };
+    showTemporaryMessage = (button, message, colorClass) => {
+        const originalContent = button.innerHTML;
+        const originalClasses = button.className;
+        button.innerHTML = message;
+        button.className = originalClasses.replace(/bg-(blue|gray|teal)-[0-9]{2,3}/g, '').replace(/hover:bg-(blue|gray|teal)-[0-9]{2,3}/g, '') + ` ${colorClass}`;
+        button.disabled = true;
+        setTimeout(() => { button.innerHTML = originalContent; button.className = originalClasses; button.disabled = false; }, 2000);
+    };
+    exportChatAsImage() {
+        if (!this.activeChatId) return showToast('กรุณาเลือกแชทก่อน', 'warning');
+        const chatContainer = this.messagesContainer;
+        const chatTitle = this.chats.find(c => c.id === this.activeChatId).title;
+        
+        this.showTemporaryMessage(this.exportImgBtn, 'กำลังสร้าง...', 'bg-yellow-500');
+
+        html2canvas(chatContainer, {
+            backgroundColor: '#111827', // bg-gray-900
+            scale: 2,
+            useCORS: true,
+            onclone: (document) => { // Ensure welcome screen is hidden in the clone
+                const welcome = document.getElementById('welcome-screen');
+                if(welcome) welcome.style.display = 'none';
+            }
+        }).then(canvas => {
+            const link = document.createElement('a');
+            link.download = `${chatTitle.replace(/[^a-z0-9]/gi, '_')}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            this.showTemporaryMessage(this.exportImgBtn, 'สำเร็จ!', 'bg-green-600');
+        }).catch(err => {
+            console.error("oops, something went wrong!", err);
+            this.showTemporaryMessage(this.exportImgBtn, 'ล้มเหลว', 'bg-red-600');
+        });
+    }
+}
+
+// Initialize the main controller
+document.addEventListener('DOMContentLoaded', () => {
+    AppManager.init();
+});
+</script>
+</body>
+</html>
